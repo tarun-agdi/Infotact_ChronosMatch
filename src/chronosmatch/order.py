@@ -1,3 +1,4 @@
+
 """
 Order data model for ChronosMatch.
 
@@ -24,10 +25,11 @@ from enum import IntEnum
 
 class OrderSide(IntEnum):
     """
-    Side of an order in the book.
+    Side of an order in the order book.
 
-    Uses IntEnum for memory efficiency, fast register-level comparisons,
-    and direct compatibility with binary serialization and C/Cython structures.
+    BUY represents an order to purchase an asset; SELL represents
+    an order to sell an asset. Integer values support compact,
+    predictable representation in the matching engine.
     """
     BUY = 1
     SELL = 2
