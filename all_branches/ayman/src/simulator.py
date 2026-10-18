@@ -29,14 +29,12 @@ class MarketSimulator():
         timestamp_ns = time.time_ns()
         ) 
         self.next_order += 1 
-        
-
         return order 
 
     async def run_simulator(self,max_order=5):
         generated = 0
         #while self.running and (max_order is None or generated < max_order ) :
-        while max_order == 5:
+        while max_order == 5: #this is the bugs which is needed to be fixed as the above commented loop is going for infinity 
             order = self.order_generator()
             print(order)
             await asyncio.sleep(self.generation_interval)
