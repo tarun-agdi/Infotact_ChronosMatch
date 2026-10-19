@@ -1,4 +1,3 @@
-
 import asyncio
 import time 
 import random 
@@ -65,7 +64,7 @@ if __name__== "__main__":
     # The coordinator creates the shared lock and ring buffer.
     import multiprocessing
     from pathlib import Path
-    from .ring_buffer import RingBuffer
+    from chronosmatch.ipc.ring_buffer import RingBuffer
     from .order_codec import ORDER_RECORD_SIZE
 
     lock = multiprocessing.Lock()
