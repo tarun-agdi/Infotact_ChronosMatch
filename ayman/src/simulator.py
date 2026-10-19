@@ -62,10 +62,14 @@ class MarketSimulator():
 
 if __name__== "__main__":
     # The coordinator creates the shared lock and ring buffer.
+    # from here we should make it in another file as its causing import clashes 
+    # which would be better for the overall structure of the project 
     import multiprocessing
     from pathlib import Path
-    from chronosmatch.ipc.ring_buffer import RingBuffer
-    from .order_codec import ORDER_RECORD_SIZE
+    from ayman.src import ring_buffer
+    from ayman.src import order_codec
+    from ring_buffer import RingBuffer
+    from order_codec import ORDER_RECORD_SIZE
 
     lock = multiprocessing.Lock()
 

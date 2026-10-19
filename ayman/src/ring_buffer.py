@@ -54,7 +54,7 @@ import struct
 from typing import Any, Final
 
 from chronosmatch.order import Order
-from chronosmatch.order_codec import ORDER_RECORD_SIZE, decode_order, encode_order
+from ayman.src.order_codec import ORDER_RECORD_SIZE, decode_order, encode_order
 
 # Header format: Big-Endian (>), 4s (magic), 3x uint32 (version, capacity, slot_size),
 # 2x uint64 (write_seq, read_seq), 32s (reserved padding).
