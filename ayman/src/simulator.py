@@ -68,8 +68,8 @@ if __name__== "__main__":
     from pathlib import Path
     from ayman.src import ring_buffer
     from ayman.src import order_codec
-    from ring_buffer import RingBuffer
-    from order_codec import ORDER_RECORD_SIZE
+    from .ring_buffer import RingBuffer
+    from .order_codec import ORDER_RECORD_SIZE
 
     lock = multiprocessing.Lock()
 
@@ -91,9 +91,9 @@ if __name__== "__main__":
         #print(order)
 
     try:
-        asyncio.run(simulator.run_simulator(max_order=5))
+        asyncio.run(simulator.run_simulator(max_order=1000))
     except KeyboardInterrupt:
         simulator.stop()
-        print("Market Simulator stopped.")
+        print(f"Market Simulator stopped.")
     finally:
         ring_buffer.close()

@@ -25,7 +25,7 @@ from __future__ import annotations
 import struct
 from typing import Final
 
-from chronosmatch.order import Order, OrderSide
+from .order import Order, OrderSide
 
 # Format specification:
 # '>' specifies standard big-endian byte order (most significant byte first).
