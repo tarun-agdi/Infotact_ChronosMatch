@@ -133,7 +133,7 @@ def decode_order(data: bytes | bytearray | memoryview) -> Order:
 
     # Construct the Order object.
     # Order.__post_init__ validates positive integers for order_id, price, quantity,
-    # and non-negative integer for timestamp_ns.
+    # and non-negative integer for timestamp_ns.#this is already done ok 
     return Order(
         order_id=order_id,
         price=price,

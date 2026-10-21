@@ -1,0 +1,84 @@
+# Byte-compiled / optimized Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions and compiled files
+*.so
+*.pyd
+*.dll
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Type checking and linting
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# ChronosMatch runtime files
+*.mmap
+*.shm
+*.ipc
+*.sock
+*.lock
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+
+# Cython build artifacts
+*.c
+*.cpp
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Profiling output
+*.prof
+*.lprof
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Backup files
+*.bak
+*.old
+*.orig
