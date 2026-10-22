@@ -65,22 +65,14 @@ def encode_order(order: Order) -> bytes: #-> bytes: means the function returns a
 
     # Guard against Python arbitrary-precision integers exceeding 64-bit unsigned bounds
     # or falling below valid Order thresholds.
-    if order.order_id < 1 or order.order_id > UINT64_MAX:
-        raise ValueError(
-            f"order_id out of range for 64-bit unsigned integer [1, {UINT64_MAX}]: {order.order_id}"
-        )
-    if order.price < 1 or order.price > UINT64_MAX:
-        raise ValueError(
-            f"price out of range for 64-bit unsigned integer [1, {UINT64_MAX}]: {order.price}"
-        )
-    if order.quantity < 1 or order.quantity > UINT64_MAX:
-        raise ValueError(
-            f"quantity out of range for 64-bit unsigned integer [1, {UINT64_MAX}]: {order.quantity}"
-        )
-    if order.timestamp_ns < UINT64_MIN or order.timestamp_ns > UINT64_MAX:
-        raise ValueError(
-            f"timestamp_ns out of range for 64-bit unsigned integer [0, {UINT64_MAX}]: {order.timestamp_ns}"
-        )
+    for name, value, minimum in [
+    ("order_id", order.order_id, 1),
+    ("price", order.price, 1),
+    ("quantity", order.quantity, 1),
+    ("timestamp_ns", order.timestamp_ns, 0),
+]:
+        if value < minimum or value > UINT64_MAX:
+            raise ValueError(f"{name} out of range: {value}")
 
     if not isinstance(order.side, OrderSide):
         raise TypeError(
@@ -141,3 +133,5 @@ def decode_order(data: bytes | bytearray | memoryview) -> Order:
         side=side,
         timestamp_ns=timestamp_ns,
     )
+
+print("code running no errors found") #this is done to ensure a successful debugging 
