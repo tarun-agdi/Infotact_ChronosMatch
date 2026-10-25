@@ -5,7 +5,7 @@ Stores buy and sell orders organized by price.
 Matching logic will be implemented separately.
 """
 
-from chronosmatch.order import Order, OrderSide
+from .order import Order, OrderSide
 
 
 class OrderBook:
