@@ -55,27 +55,34 @@ class MatchingEngine:
         Process an incoming order against the order book.
 
         If the order crosses the book, visits eligible opposing orders in price-time
-        priority, generates Trade records at resting prices, and returns them.
-        If the order does not cross, returns an empty list.
+        priority, generates Trade records at resting prices, updates or removes
+        resting orders, and returns the generated trades. If any unfilled quantity
+        remains, or if the order does not cross, adds the order or remaining
+        quantity to the order book.
 
         Args:
             order: The incoming Order instance.
 
         Returns:
             List of generated Trade records.
+
+        Raises:
+            TypeError: If order is not an instance of Order.
         """
         if not isinstance(order, Order):
             raise TypeError(f"order must be an instance of Order, got {type(order).__name__}")
 
         trades: list[Trade] = []
-        if not self.is_crossing(order):
-            # Uncrossed orders: Person B handles resting/remaining quantity placement.
-            return trades
-
         remaining_qty = order.quantity
         is_buy = order.side == OrderSide.BUY
 
-        # Price priority: BUY matches lowest asks first; SELL matches highest bids first.
+        # If the order cannot cross, add it to the book.
+        if not self.is_crossing(order):
+            self.order_book.add_order(order)
+            return trades
+
+        # Buyers match against asks from lowest to highest.
+        # Sellers match against bids from highest to lowest.
         prices = (
             sorted(self.order_book.asks.keys())
             if is_buy
@@ -83,29 +90,77 @@ class MatchingEngine:
         )
 
         for price in prices:
-            if (is_buy and price > order.price) or (not is_buy and price < order.price):
+            # Stop when the next price is outside the incoming order's limit.
+            if (is_buy and price > order.price) or (
+                not is_buy and price < order.price
+            ):
                 break
 
-            opposing_orders = self.order_book.asks[price] if is_buy else self.order_book.bids[price]
-            for resting_order in opposing_orders:
-                if remaining_qty == 0:
-                    break
+            opposing_book = (
+                self.order_book.asks if is_buy else self.order_book.bids
+            )
+            opposing_orders = opposing_book[price]
+
+            # Use an index so removing a filled order doesn't skip the next one.
+            index = 0
+
+            while index < len(opposing_orders) and remaining_qty > 0:
+                resting_order = opposing_orders[index]
 
                 matched_qty = min(remaining_qty, resting_order.quantity)
+
                 trades.append(
                     Trade(
-                        buy_order_id=order.order_id if is_buy else resting_order.order_id,
-                        sell_order_id=resting_order.order_id if is_buy else order.order_id,
+                        buy_order_id=(
+                            order.order_id if is_buy
+                            else resting_order.order_id
+                        ),
+                        sell_order_id=(
+                            resting_order.order_id if is_buy
+                            else order.order_id
+                        ),
                         price=resting_order.price,
                         quantity=matched_qty,
                         timestamp_ns=order.timestamp_ns,
                     )
                 )
+
                 remaining_qty -= matched_qty
+                resting_remaining = resting_order.quantity - matched_qty
+
+                if resting_remaining == 0:
+                    # Fully filled: remove the resting order.
+                    opposing_orders.pop(index)
+                else:
+                    # Partially filled: replace it in the same position.
+                    # This preserves FIFO priority at this price.
+                    opposing_orders[index] = Order(
+                        order_id=resting_order.order_id,
+                        price=resting_order.price,
+                        quantity=resting_remaining,
+                        side=resting_order.side,
+                        timestamp_ns=resting_order.timestamp_ns,
+                    )
+                    index += 1
+
+            # Remove empty price levels.
+            if not opposing_orders:
+                del opposing_book[price]
 
             if remaining_qty == 0:
                 break
 
+        # Add any unfilled quantity of the incoming order to the book.
+        if remaining_qty > 0:
+            remaining_order = Order(
+                order_id=order.order_id,
+                price=order.price,
+                quantity=remaining_qty,
+                side=order.side,
+                timestamp_ns=order.timestamp_ns,
+            )
+            self.order_book.add_order(remaining_order)
+
         return trades
 
-    match = process_order  #This is a Python alias. It means you can call either: engine.process_order(order) (or) engine.match(order)
+    match = process_order  # Alias for process_order
