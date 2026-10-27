@@ -3,7 +3,7 @@ import asyncio
 import multiprocessing
 from pathlib import Path
 
-from src.chronosmatch.ipc.ring_buffer import RingBuffer
+from chronosmatch.ipc.ring_buffer import RingBuffer
 from chronosmatch.matching_engine import MatchingEngine
 from chronosmatch.order_codec import ORDER_RECORD_SIZE
 from chronosmatch.simulator import MarketSimulator
@@ -68,3 +68,6 @@ async def run_pipeline() -> None:
 
 if __name__ == "__main__":
     asyncio.run(run_pipeline())
+
+#need to add the manual stoppping for this file
+# code tested and made ready  
