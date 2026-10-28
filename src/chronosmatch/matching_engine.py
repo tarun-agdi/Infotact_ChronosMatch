@@ -9,6 +9,15 @@ from chronosmatch.order_book import OrderBook
 from chronosmatch.trade import Trade
 
 
+try:
+    from chronosmatch._matching_core import match_order as _cython_match_order
+
+    CYTHON_CORE_AVAILABLE = True
+except ImportError:
+    _cython_match_order = None
+    CYTHON_CORE_AVAILABLE = False
+
+
 class MatchingEngine:
     """
     In-memory matching engine operating on an OrderBook.
@@ -23,9 +32,14 @@ class MatchingEngine:
     - Inserting remaining/unfilled incoming quantities into the book.
     """
 
-    def __init__(self, order_book: OrderBook | None = None) -> None:
+    def __init__(
+        self,
+        order_book: OrderBook | None = None,
+        use_cython: bool = True,
+    ) -> None:
         """Initialize the matching engine with an optional existing OrderBook."""
         self.order_book = order_book if order_book is not None else OrderBook()
+        self.use_cython = use_cython and CYTHON_CORE_AVAILABLE
 
     def is_crossing(self, order: Order) -> bool:
         """
@@ -71,6 +85,14 @@ class MatchingEngine:
         """
         if not isinstance(order, Order):
             raise TypeError(f"order must be an instance of Order, got {type(order).__name__}")
+
+        if self.use_cython and _cython_match_order is not None:
+            return _cython_match_order(self.order_book, order)
+
+        return self._process_order_python(order)
+
+    def _process_order_python(self, order: Order) -> list[Trade]:
+        """Reference pure-Python matching logic."""
 
         trades: list[Trade] = []
         remaining_qty = order.quantity
