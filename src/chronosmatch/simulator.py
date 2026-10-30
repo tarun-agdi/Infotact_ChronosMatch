@@ -1,57 +1,42 @@
-"""
-Market Simulator for ChronosMatch.
-
-Generates realistic mock orders and pushes them into the shared-memory RingBuffer.
-"""
-
-from __future__ import annotations
-
 import asyncio
-import random
 import time
-from typing import Any
+import random
+from .order import Order,OrderSide
 
-from chronosmatch.order import Order, OrderSide
+class MarketSimulator():
+    #intialization of variables
+    def __init__(self, ring_buffer, generation_interval=0.1):
+
+        self.next_order = 1 #this is intentionally kept 1 as the constriants in the order file mentions that
+
+        self.minimun_price = 100 # this is the sample price taken for testing
+        self.maximum_price = 1000
+
+        self.minimum_quatity = 1 #this is also taken for sample also
+        self.maximum_quatity = 1000
+
+        self.running = True
+        self.generation_interval = generation_interval # this gives us the flexibility of making the time interval different according to the requirement
+        # else it will be with the interval of 0.1 only
+
+        self.ring_buffer = ring_buffer # this stores the ring buffer object provided by the coordinator
 
 
-class MarketSimulator:
-    """
-    Market simulator generating a stream of buy and sell orders.
-    """
-
-    def __init__(self, ring_buffer: Any, generation_interval: float = 0.1) -> None:
-        self.next_order: int = 1
-        self.minimum_price: int = 100
-        self.maximum_price: int = 1000
-        self.minimum_quantity: int = 1
-        self.maximum_quantity: int = 1000
-        self.running: bool = True
-        self.generation_interval: float = generation_interval
-        self.ring_buffer: Any = ring_buffer
-
-        # Compatibility aliases for attributes in reference code
-        self.minimun_price: int = self.minimum_price
-        self.minimum_quatity: int = self.minimum_quantity
-        self.maximum_quatity: int = self.maximum_quantity
-
-    def order_generator(self) -> Order:
-        """Generate a single random Order instance."""
-        order = Order(
-            order_id=self.next_order,
-            side=random.choice(list(OrderSide)),
-            price=random.randint(self.minimum_price, self.maximum_price),
-            quantity=random.randint(self.minimum_quantity, self.maximum_quantity),
-            timestamp_ns=time.time_ns(),
+    def order_generator(self):
+        order=Order(
+        order_id = self.next_order,
+        side = random.choice(list(OrderSide)),
+        price = random.randint(self.minimun_price,self.maximum_price),
+        quantity = random.randint(self.minimum_quatity,self.maximum_quatity),
+        timestamp_ns = time.time_ns()
         )
         self.next_order += 1
         return order
 
-    async def run_simulator(self, max_order: int | None = 5) -> None:
-        """
-        Continuously generate orders and publish them to the ring buffer.
-        """
+    async def run_simulator(self,max_order=5):
         generated = 0
 
+        #while self.running and (max_order is None or generated < max_order ) :
         while self.running and (max_order is None or generated < max_order):
             order = self.order_generator()
 
@@ -71,6 +56,44 @@ class MarketSimulator:
         self.running = False
         print(f"Total orders published: {generated}")
 
-    def stop(self) -> None:
-        """Signal the simulator to stop producing orders."""
+    def stop(self):
         self.running = False
+
+
+if __name__== "__main__":
+    # The coordinator creates the shared lock and ring buffer.
+    # from here we should make it in another file as its causing import clashes
+    # which would be better for the overall structure of the project
+    import multiprocessing
+    from pathlib import Path
+    from ayman.src import ring_buffer
+    from ayman.src import order_codec
+    from .ring_buffer import RingBuffer
+    from .order_codec import ORDER_RECORD_SIZE
+
+    lock = multiprocessing.Lock()
+
+    ring_buffer = RingBuffer.create(
+        filepath=Path("data/chronosmatch_buffer.bin"),
+        capacity=1024,
+        slot_size=ORDER_RECORD_SIZE,
+        lock=lock,
+    )
+
+    simulator = MarketSimulator(
+        ring_buffer=ring_buffer,
+        generation_interval=0.1
+    )
+
+    #simulator.run_simulator
+    #for i in range(5): #this is taken for the testing purposes only it would be replaced by the asyncio function
+        #order = simulator.run_simulator()
+        #print(order)
+
+    try:
+        asyncio.run(simulator.run_simulator(max_order=1000))
+    except KeyboardInterrupt:
+        simulator.stop()
+        print(f"Market Simulator stopped.")
+    finally:
+        ring_buffer.close()

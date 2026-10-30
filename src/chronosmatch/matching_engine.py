@@ -1,145 +1,101 @@
+
 """
-Matching Engine for ChronosMatch.
-
-Provides the core order matching interface, crossing checks, and trade creation.
+Matching engine for ChronosMatch.
 """
 
-from chronosmatch.order import Order, OrderSide
-from chronosmatch.order_book import OrderBook
-from chronosmatch.trade import Trade
-
+from .order import Order, OrderSide
+from .order_book import OrderBook
+from .trade import Trade
 
 try:
-    from chronosmatch._matching_core import match_order as _cython_match_order
+    from chronosmatch.matching_engine_cy import match_order as _cython_match_order
 
     CYTHON_CORE_AVAILABLE = True
 except ImportError:
-    _cython_match_order = None
-    CYTHON_CORE_AVAILABLE = False
+    try:
+        from .matching_engine_cy import match_order as _cython_match_order
+
+        CYTHON_CORE_AVAILABLE = True
+    except ImportError:
+        _cython_match_order = None
+        CYTHON_CORE_AVAILABLE = False
 
 
 class MatchingEngine:
-    """
-    In-memory matching engine operating on an OrderBook.
-
-    Person A responsibilities:
-    - Order crossing checks against best opposing book quotes.
-    - Initial matching loop visiting eligible resting orders.
-    - Generating Trade records executed at resting order prices.
-
-    Person B responsibilities (boundaries):
-    - Updating/removing resting orders in the book upon fill.
-    - Inserting remaining/unfilled incoming quantities into the book.
-    """
+    """Match incoming orders using price-time priority."""
 
     def __init__(
         self,
         order_book: OrderBook | None = None,
         use_cython: bool = True,
     ) -> None:
-        """Initialize the matching engine with an optional existing OrderBook."""
         self.order_book = order_book if order_book is not None else OrderBook()
         self.use_cython = use_cython and CYTHON_CORE_AVAILABLE
 
     def is_crossing(self, order: Order) -> bool:
-        """
-        Determine whether an incoming order crosses the best opposing order in the book.
-
-        - A BUY order crosses when its limit price >= best ask.
-        - A SELL order crosses when its limit price <= best bid.
-
-        Args:
-            order: The incoming Order to evaluate.
-
-        Returns:
-            True if the order crosses the opposing spread; False otherwise.
-        """
+        """Return whether an order can match the best opposing price."""
         if not isinstance(order, Order):
-            raise TypeError(f"order must be an instance of Order, got {type(order).__name__}")
+            raise TypeError(
+                f"order must be an Order instance, got {type(order).__name__}"
+            )
 
         if order.side == OrderSide.BUY:
-            best_ask = self.order_book.best_ask()
-            return best_ask is not None and order.price >= best_ask
+            best_price = self.order_book.best_ask()
+            return best_price is not None and order.price >= best_price
 
-        best_bid = self.order_book.best_bid()
-        return best_bid is not None and order.price <= best_bid
+        best_price = self.order_book.best_bid()
+        return best_price is not None and order.price <= best_price
 
     def process_order(self, order: Order) -> list[Trade]:
-        """
-        Process an incoming order against the order book.
-
-        If the order crosses the book, visits eligible opposing orders in price-time
-        priority, generates Trade records at resting prices, updates or removes
-        resting orders, and returns the generated trades. If any unfilled quantity
-        remains, or if the order does not cross, adds the order or remaining
-        quantity to the order book.
-
-        Args:
-            order: The incoming Order instance.
-
-        Returns:
-            List of generated Trade records.
-
-        Raises:
-            TypeError: If order is not an instance of Order.
-        """
+        """Match an order, update the book, and return executed trades."""
         if not isinstance(order, Order):
-            raise TypeError(f"order must be an instance of Order, got {type(order).__name__}")
+            raise TypeError(
+                f"order must be an Order instance, got {type(order).__name__}"
+            )
 
         if self.use_cython and _cython_match_order is not None:
             return _cython_match_order(self.order_book, order)
 
-        return self._process_order_python(order)
-
-    def _process_order_python(self, order: Order) -> list[Trade]:
-        """Reference pure-Python matching logic."""
-
-        trades: list[Trade] = []
-        remaining_qty = order.quantity
         is_buy = order.side == OrderSide.BUY
+        remaining_qty = order.quantity
+        trades: list[Trade] = []
 
-        # If the order cannot cross, add it to the book.
+        opposing_book = (
+            self.order_book.asks if is_buy else self.order_book.bids
+        )
+
         if not self.is_crossing(order):
             self.order_book.add_order(order)
             return trades
 
-        # Buyers match against asks from lowest to highest.
-        # Sellers match against bids from highest to lowest.
-        prices = (
-            sorted(self.order_book.asks.keys())
-            if is_buy
-            else sorted(self.order_book.bids.keys(), reverse=True)
+        prices = sorted(
+            opposing_book,
+            reverse=not is_buy,
         )
 
         for price in prices:
-            # Stop when the next price is outside the incoming order's limit.
+            if remaining_qty == 0:
+                break
+
             if (is_buy and price > order.price) or (
                 not is_buy and price < order.price
             ):
                 break
 
-            opposing_book = (
-                self.order_book.asks if is_buy else self.order_book.bids
-            )
-            opposing_orders = opposing_book[price]
-
-            # Use an index so removing a filled order doesn't skip the next one.
+            resting_orders = opposing_book[price]
             index = 0
 
-            while index < len(opposing_orders) and remaining_qty > 0:
-                resting_order = opposing_orders[index]
-
+            while index < len(resting_orders) and remaining_qty > 0:
+                resting_order = resting_orders[index]
                 matched_qty = min(remaining_qty, resting_order.quantity)
 
                 trades.append(
                     Trade(
                         buy_order_id=(
-                            order.order_id if is_buy
-                            else resting_order.order_id
+                            order.order_id if is_buy else resting_order.order_id
                         ),
                         sell_order_id=(
-                            resting_order.order_id if is_buy
-                            else order.order_id
+                            resting_order.order_id if is_buy else order.order_id
                         ),
                         price=resting_order.price,
                         quantity=matched_qty,
@@ -151,12 +107,9 @@ class MatchingEngine:
                 resting_remaining = resting_order.quantity - matched_qty
 
                 if resting_remaining == 0:
-                    # Fully filled: remove the resting order.
-                    opposing_orders.pop(index)
+                    resting_orders.pop(index)
                 else:
-                    # Partially filled: replace it in the same position.
-                    # This preserves FIFO priority at this price.
-                    opposing_orders[index] = Order(
+                    resting_orders[index] = Order(
                         order_id=resting_order.order_id,
                         price=resting_order.price,
                         quantity=resting_remaining,
@@ -165,24 +118,20 @@ class MatchingEngine:
                     )
                     index += 1
 
-            # Remove empty price levels.
-            if not opposing_orders:
+            if not resting_orders:
                 del opposing_book[price]
 
-            if remaining_qty == 0:
-                break
-
-        # Add any unfilled quantity of the incoming order to the book.
         if remaining_qty > 0:
-            remaining_order = Order(
-                order_id=order.order_id,
-                price=order.price,
-                quantity=remaining_qty,
-                side=order.side,
-                timestamp_ns=order.timestamp_ns,
+            self.order_book.add_order(
+                Order(
+                    order_id=order.order_id,
+                    price=order.price,
+                    quantity=remaining_qty,
+                    side=order.side,
+                    timestamp_ns=order.timestamp_ns,
+                )
             )
-            self.order_book.add_order(remaining_order)
 
         return trades
 
-    match = process_order  # Alias for process_order
+    match = process_order

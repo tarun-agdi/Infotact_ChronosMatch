@@ -23,7 +23,7 @@ import sys
 import time
 from typing import Callable, Final
 
-import chronosmatch._matching_core as cython_core
+import chronosmatch.matching_engine_cy as cython_core
 import chronosmatch.matching_engine as me_module
 from chronosmatch.matching_engine import CYTHON_CORE_AVAILABLE, MatchingEngine
 from chronosmatch.order import Order, OrderSide

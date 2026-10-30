@@ -144,5 +144,44 @@ class TestPipelineIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.engine.order_book.asks[1100]), 1)
 
 
+def test_simulator_to_matching_engine(tmp_path):
+    """Ayman's minimal pipeline scenario: verify 5 generated orders process cleanly."""
+    ring_buffer = RingBuffer.create(
+        filepath=tmp_path / "test_buffer.bin",
+        capacity=8,
+        slot_size=ORDER_RECORD_SIZE,
+        lock=multiprocessing.Lock(),
+    )
+
+    simulator = MarketSimulator(
+        ring_buffer=ring_buffer,
+        generation_interval=0,
+    )
+    engine = MatchingEngine()
+
+    async def scenario():
+        producer = asyncio.create_task(
+            simulator.run_simulator(max_order=5)
+        )
+        processed = 0
+
+        while not producer.done() or not ring_buffer.is_empty():
+            order = ring_buffer.pop_order()
+            if order is None:
+                await asyncio.sleep(0.001)
+                continue
+
+            engine.process_order(order)
+            processed += 1
+
+        await producer
+        assert processed == 5
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        ring_buffer.close()
+
+
 if __name__ == "__main__":
     unittest.main()

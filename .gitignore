@@ -15,4 +15,5 @@ build/
 *.egg-info/
 *.mmap
 *.dat
-src/chronosmatch/_matching_core.c
+src/chronosmatch/*.c
+src/chronosmatch/matching_engine.c

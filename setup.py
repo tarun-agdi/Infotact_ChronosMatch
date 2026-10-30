@@ -1,16 +1,24 @@
+
+from setuptools import setup, Extension, find_packages
 from Cython.Build import cythonize
-from setuptools import Extension, setup
 
 extensions = [
     Extension(
-        "chronosmatch._matching_core",
-        ["src/chronosmatch/_matching_core.pyx"],
+        name="chronosmatch.matching_engine_cy",
+        sources=["src/chronosmatch/matching_engine.pyx"],
     )
 ]
 
 setup(
+    name="chronosmatch",
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     ext_modules=cythonize(
         extensions,
-        compiler_directives={"language_level": "3"},
+        compiler_directives={
+            "language_level": 3,
+            "boundscheck": True,
+            "wraparound": True,
+        },
     ),
 )
