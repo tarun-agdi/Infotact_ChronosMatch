@@ -40,24 +40,24 @@ def test_error_tracking(monitor):
 
     class TestMonitor:
 
-    def __init__(self):
-        self.orders = 0
-        self.trades = 0
-        self.errors = 0
+        def __init__(self):
+            self.orders = 0
+            self.trades = 0
+            self.errors = 0
 
-    def record_order(self):
-        self.orders += 1
+        def record_order(self):
+            self.orders += 1
 
-    def record_trade(self):
-        self.trades += 1
+        def record_trade(self):
+            self.trades += 1
 
-    def record_error(self, message):
-        self.errors += 1
-        print(f"ERROR: {message}")
+        def record_error(self, message):
+            self.errors += 1
+            print(f"ERROR: {message}")
 
-    def get_statistics(self):
-        return {
-            "orders": self.orders,
-            "trades": self.trades,
-            "errors": self.errors
-        }
+        def get_statistics(self):
+            return {
+                "orders": self.orders,
+                "trades": self.trades,
+                "errors": self.errors
+            }
