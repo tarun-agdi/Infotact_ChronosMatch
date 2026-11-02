@@ -5,7 +5,7 @@ from Cython.Build import cythonize
 extensions = [
     Extension(
         name="chronosmatch.matching_engine_cy",
-        sources=["src/chronosmatch/matching_engine.pyx"],
+        sources=["src/chronosmatch/matching_engine_cy.pyx"],
     )
 ]
 
