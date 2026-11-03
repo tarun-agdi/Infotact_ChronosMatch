@@ -17,3 +17,6 @@ build/
 *.dat
 src/chronosmatch/*.c
 src/chronosmatch/matching_engine.c
+
+# Runtime data
+data/
