@@ -11,6 +11,7 @@ from chronosmatch.matching_engine import MatchingEngine
 from chronosmatch.order_codec import ORDER_RECORD_SIZE
 from chronosmatch.simulator import MarketSimulator
 from chronosmatch.dashboard import CursesDashboard
+from chronosmatch.whale_detector import detect_whale
 
 
 async def run_pipeline(dashboard):
@@ -28,6 +29,8 @@ async def run_pipeline(dashboard):
         generation_interval=0.001,
     )
     engine = MatchingEngine()
+    if hasattr(dashboard, "engine"):
+        dashboard.engine = engine
 
     processed_orders = 0
     executed_trades = 0
@@ -52,7 +55,7 @@ async def run_pipeline(dashboard):
             order = ring_buffer.pop_order()
 
             if order is not None:
-                # Measure matching-engine processing time
+                # Measure matching-engine processing time synchronously
                 start_ns = time.perf_counter_ns()
                 trades = engine.process_order(order)
                 latency_us = (
@@ -77,17 +80,26 @@ async def run_pipeline(dashboard):
                         "quantity": trade.quantity,
                     })
 
+                # Detect whale orders across swept price levels
+                whale = detect_whale(order, trades)
+                if whale is not None and hasattr(dashboard, "add_whale"):
+                    dashboard.add_whale(whale)
+
                 dashboard.update(
                     orders=processed_orders,
                     trades=executed_trades,
                     latency_us=latency_us,
+                    best_bid=engine.order_book.best_bid(),
+                    best_ask=engine.order_book.best_ask(),
                 )
-            else:
-                await asyncio.sleep(0.001)
 
-            # Keep the terminal responsive
-            dashboard.refresh()
-            await asyncio.sleep(0.05)
+                # Periodically yield control cooperatively between order batches
+                if processed_orders % 50 == 0:
+                    dashboard.refresh()
+                    await asyncio.sleep(0)
+            else:
+                dashboard.refresh()
+                await asyncio.sleep(0.001)
 
         await producer
 
@@ -119,4 +131,15 @@ def main(stdscr):
 
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    import argparse
+    parser = argparse.ArgumentParser(description="ChronosMatch Pipeline Runner")
+    parser.add_argument("--web", action="store_true", help="Launch browser-based operations console")
+    parser.add_argument("--host", default="127.0.0.1", help="Host address for web console (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8000, help="Port for web console (default: 8000)")
+    args = parser.parse_args()
+
+    if args.web:
+        from chronosmatch.web_dashboard import start_web_pipeline
+        start_web_pipeline(host=args.host, port=args.port)
+    else:
+        curses.wrapper(main)

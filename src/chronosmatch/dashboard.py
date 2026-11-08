@@ -10,6 +10,7 @@ class CursesDashboard:
         self.stdscr = stdscr
         self.orders = 0
         self.trades = 0
+        self.whales = 0
         self.status = "STARTING"
         self.latency_us = None
         self.start_time = time.monotonic()
@@ -206,7 +207,7 @@ class CursesDashboard:
         self.stdscr.refresh()
 
     def update(self, orders=None, trades=None, status=None,
-               latency_us=None):
+               latency_us=None, **kwargs):
         # Update supplied values; counters are absolute totals
         if orders is not None:
             self.orders = max(0, orders)
@@ -216,6 +217,16 @@ class CursesDashboard:
             self.status = status
         if latency_us is not None:
             self.latency_us = latency_us
+
+    def add_whale(self, whale):
+        self.whales += 1
+        prices = f"{min(whale.execution_prices)}-{max(whale.execution_prices)}"
+        side = "BUY" if getattr(whale.side, "name", str(whale.side)) == "BUY" else "SELL"
+        record = (
+            f"{datetime.now().strftime('%H:%M:%S'):<10.10} {'*WHALE*':<10.10} "
+            f"{side:<6.6} {prices:>10.10} {str(whale.total_quantity):>8.8}"
+        )
+        self.recent_trades.append(record)
 
     def add_trade(self, trade):
         # Accept a dictionary or a plain text trade record
