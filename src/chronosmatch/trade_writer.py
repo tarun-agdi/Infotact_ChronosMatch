@@ -51,3 +51,22 @@ Algorithm 6: stop()
 3. Ensure the remaining partial batch is flushed.
 4. Wait for the background task to finish.
 5. Mark the writer as stopped.'''
+
+class TradeWriter:
+
+    def __init__(self, trade_store):
+        self.trade_store = trade_store
+        self.trades = []
+
+    def add_trade(self, trade):
+        self.trades.append(trade)
+
+    def write_trades(self):
+        if not self.trades:
+            return
+
+        self.trade_store.save_trade(self.trades)
+        self.trades.clear()
+
+    def flush(self):
+        self.write_trades()

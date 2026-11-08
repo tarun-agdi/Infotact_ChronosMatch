@@ -40,3 +40,61 @@ Algorithm 5: close()
 1. Check whether the database connection is open.
 2. Close the database connection.
 3. Release the database resources."""
+import sqlite3
+
+
+
+class Tradestore():
+
+   def __init__(self, db_path) -> None:
+      connection = sqlite3.connect(db_path)
+      self.connection = connection
+      cursor = sqlite3.Cursor(connection)
+      self.cursor = cursor
+      self.create_table()
+
+   def create_table(self):
+      query = """CREATE TABLE if not exists trades(
+                  trade_id integer primary key,
+                  buy_order_id INTEGER,
+                  sell_order_id INTEGER,
+                  price REAL,
+                  quantity INTEGER,
+                  timestamp TEXT);"""
+      self.cursor.execute(query)
+      self.connection.commit()
+
+   def save_trade(self,trades):
+      if not trades:
+         return 
+
+      value = []
+      for trade in trades:
+         exe_trade = (
+                  trade.buy_order_id,
+                  trade.sell_order_id,
+                  trade.price,
+                  trade.quantity,
+                  trade.timestamp)
+      value.append(exe_trade)
+      query = """INSERT INTO trades
+               (buy_order_id, sell_order_id, price, quantity, timestamp)
+               VALUES (?, ?, ?, ?, ?)"""
+      self.cursor.executemany(query, value)
+
+      self.connection.commit()
+
+   def get_trades(self, limit=100):
+    query = """SELECT * FROM trades
+               ORDER BY trade_id DESC
+               LIMIT ?"""
+
+    self.cursor.execute(query, (limit,))
+    trades = self.cursor.fetchall()
+
+    return trades
+
+   def close(self):
+    if self.connection:
+        self.cursor.close()
+        self.connection.close()
