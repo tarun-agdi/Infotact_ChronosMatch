@@ -4,17 +4,29 @@ import time
 from collections import deque
 from datetime import datetime
 
+try:
+    from chronosmatch.matching_engine import CYTHON_CORE_AVAILABLE
+except ImportError:
+    try:
+        from .matching_engine import CYTHON_CORE_AVAILABLE
+    except ImportError:
+        CYTHON_CORE_AVAILABLE = False
+
 
 class CursesDashboard:
     def __init__(self, stdscr):
         self.stdscr = stdscr
+        self.engine = None
         self.orders = 0
         self.trades = 0
         self.whales = 0
+        self.best_bid = None
+        self.best_ask = None
         self.status = "STARTING"
         self.latency_us = None
         self.start_time = time.monotonic()
-        self.recent_trades = deque(maxlen=6)
+        self.recent_trades = deque(maxlen=20)
+        self.recent_whales = deque(maxlen=20)
 
         self.last_rate_time = time.monotonic()
         self.last_rate_orders = 0
@@ -111,7 +123,7 @@ class CursesDashboard:
     def draw_header(self, width):
         # Display the title and current clock
         self.put(0, 2, "CHRONOSMATCH", self.color(2, True))
-        self.put(0, 16, "ZERO-COPY HFT ENGINE", self.color(2))
+        self.put(0, 16, "| ZERO-COPY HFT ENGINE", self.color(2))
         self.put(0, max(2, width - 22),
                  datetime.now().strftime("%H:%M:%S"),
                  self.color(3, True))
@@ -123,60 +135,120 @@ class CursesDashboard:
         left_x = 2
         right_x = left_x + panel_width + 2
 
-        self.draw_panel(3, left_x, 8, panel_width, "ENGINE")
-        self.draw_panel(3, right_x, 8, panel_width, "PERFORMANCE")
+        self.draw_panel(2, left_x, 8, panel_width, "ENGINE & PERFORMANCE")
+        self.draw_panel(2, right_x, 8, panel_width, "MARKET SNAPSHOT & WHALES")
 
+        # Left Panel (Engine & Performance)
         status_color = 1 if self.status == "RUNNING" else 3
-        self.put(5, left_x + 2, f"Status     : {self.status}",
+        self.put(3, left_x + 2, f"Status     : {self.status}",
                  self.color(status_color, True), panel_width - 4)
-        self.put(6, left_x + 2,
-                 f"Orders     : {self.orders:,}",
+        self.put(4, left_x + 2, f"Orders     : {self.orders:,}",
                  max_width=panel_width - 4)
-        self.put(7, left_x + 2,
-                 f"Trades     : {self.trades:,}",
+        self.put(5, left_x + 2, f"Trades     : {self.trades:,}",
                  max_width=panel_width - 4)
-
-        uptime = time.monotonic() - self.start_time
-        minutes, seconds = divmod(int(uptime), 60)
-        hours, minutes = divmod(minutes, 60)
-        self.put(8, left_x + 2,
-                 f"Uptime     : {hours:02}:{minutes:02}:{seconds:02}",
-                 max_width=panel_width - 4)
-
-        self.put(5, right_x + 2,
-                 f"Orders/sec : {self.orders_per_sec:,.1f}",
+        self.put(6, left_x + 2, f"Throughput : {self.orders_per_sec:,.1f} ord/s",
                  self.color(1, True), panel_width - 4)
         latency = (
             f"{self.latency_us:.2f} us"
             if self.latency_us is not None
             else "Awaiting data"
         )
-        self.put(6, right_x + 2, f"Latency    : {latency}",
-                 max_width=panel_width - 4)
-        self.put(7, right_x + 2,
-                 "Mode       : LIVE METRICS",
-                 self.color(2), panel_width - 4)
-        self.put(8, right_x + 2,
-                 "Feed       : Pipeline required",
+        self.put(7, left_x + 2, f"Avg Latency: {latency}",
                  max_width=panel_width - 4)
 
-    def draw_trades(self, width, height):
-        # Display the most recent executions
-        y = 13
-        panel_height = max(3, height - y - 3)
+        # Cython runtime mode (accurate active status)
+        is_cython = bool(
+            self.engine and getattr(self.engine, "use_cython", False) and CYTHON_CORE_AVAILABLE
+        )
+        cython_label = "CYTHON NATIVE" if is_cython else "PYTHON FALLBACK"
+        cython_color = 1 if is_cython else 3
+        self.put(8, left_x + 2, f"Kernel     : {cython_label}",
+                 self.color(cython_color, True), panel_width - 4)
 
-        if not self.draw_panel(y, 2, panel_height, width - 4,
-                               "RECENT TRADES"):
+        # Right Panel (Market Snapshot & Whale Stats)
+        bid_str = f"{self.best_bid:,}" if self.best_bid is not None else "no resting bids"
+        ask_str = f"{self.best_ask:,}" if self.best_ask is not None else "no resting asks"
+        spread = (
+            (self.best_ask - self.best_bid)
+            if (self.best_bid is not None and self.best_ask is not None)
+            else None
+        )
+        spread_str = f"{spread:,}" if spread is not None else "—"
+
+        bids_cnt = len(self.engine.order_book.bids) if (self.engine and hasattr(self.engine, "order_book")) else 0
+        asks_cnt = len(self.engine.order_book.asks) if (self.engine and hasattr(self.engine, "order_book")) else 0
+        book_status = "ACTIVE" if (bids_cnt > 0 or asks_cnt > 0 or self.orders > 0) else "READY"
+
+        self.put(3, right_x + 2, f"Best Bid   : {bid_str}",
+                 self.color(1) if self.best_bid is not None else 0, panel_width - 4)
+        self.put(4, right_x + 2, f"Best Ask   : {ask_str}",
+                 self.color(4) if self.best_ask is not None else 0, panel_width - 4)
+        self.put(5, right_x + 2, f"Spread     : {spread_str}",
+                 self.color(2, True) if spread is not None else 0, panel_width - 4)
+        self.put(6, right_x + 2, f"Whales     : {self.whales} DETECTED",
+                 self.color(3, True), panel_width - 4)
+        self.put(7, right_x + 2, f"Order Book : {book_status} ({bids_cnt}b / {asks_cnt}a)",
+                 max_width=panel_width - 4)
+
+        uptime = time.monotonic() - self.start_time
+        minutes, seconds = divmod(int(uptime), 60)
+        hours, minutes = divmod(minutes, 60)
+        self.put(8, right_x + 2, f"Uptime     : {hours:02}:{minutes:02}:{seconds:02}",
+                 max_width=panel_width - 4)
+
+        uptime = time.monotonic() - self.start_time
+        minutes, seconds = divmod(int(uptime), 60)
+        hours, minutes = divmod(minutes, 60)
+        self.put(8, right_x + 2, f"Uptime     : {hours:02}:{minutes:02}:{seconds:02}",
+                 max_width=panel_width - 4)
+
+    def draw_whales(self, y, height, width):
+        # Display detected whale order sweeps
+        if not self.draw_panel(y, 2, height, width - 4, "WHALE ALERTS (MULTI-LEVEL SWEEPS)"):
             return
 
-        self.put(y + 1, 4,
-                 f"{'TIME':<10} {'SYMBOL':<10} {'SIDE':<6} "
-                 f"{'PRICE':>10} {'QTY':>8}",
-                 self.color(3, True), width - 8)
+        self.put(
+            y + 1, 4,
+            f"{'TIME':<10} {'ORDER':<10} {'SIDE':<6} {'QTY':>8} {'LEVELS':>8}  {'PRICES':<18}",
+            self.color(3, True), width - 8
+        )
 
-        rows = min(len(self.recent_trades), panel_height - 3)
+        rows = min(len(self.recent_whales), height - 3)
+        if rows == 0:
+            self.put(
+                y + 2, 4,
+                "No whale sweeps detected yet (orders sweeping >= 2 levels appear here)",
+                self.color(2), width - 8
+            )
+            return
 
-        for i, trade in enumerate(list(self.recent_trades)[-rows:]):
+        for i, w in enumerate(list(self.recent_whales)[:rows]):
+            row_y = y + 2 + i
+            record = (
+                f"{w['time']:<10} #{w['order_id']:<9} {w['side']:<6} "
+                f"{w['quantity']:>8,} {w['levels_swept']:>8}  {w['prices']}"
+            )
+            self.put(row_y, 4, record, max_width=width - 8)
+            side_color = 1 if w["side"] == "BUY" else 4
+            self.put(row_y, 25, f"{w['side']:<6}", self.color(side_color, True), max_width=width - 29)
+
+    def draw_trades(self, y, height, width):
+        # Display the most recent executions
+        if not self.draw_panel(y, 2, height, width - 4, "RECENT TRADES"):
+            return
+
+        self.put(
+            y + 1, 4,
+            f"{'TIME':<10} {'SYMBOL':<10} {'SIDE':<6} {'PRICE':>10} {'QTY':>8}",
+            self.color(3, True), width - 8
+        )
+
+        rows = min(len(self.recent_trades), height - 3)
+        if rows == 0:
+            self.put(y + 2, 4, "Awaiting trade executions...", self.color(2), width - 8)
+            return
+
+        for i, trade in enumerate(list(self.recent_trades)[:rows]):
             row_y = y + 2 + i
             self.put(row_y, 4, trade, max_width=width - 8)
 
@@ -202,12 +274,28 @@ class CursesDashboard:
 
         self.draw_header(width)
         self.draw_metrics(width)
-        self.draw_trades(width, height)
+
+        # Allocate space dynamically between Whale Alerts and Recent Trades
+        avail_height = height - 10 - 2
+        whale_height = max(4, avail_height // 2)
+        trades_y = 10 + whale_height
+        trades_height = height - trades_y - 2
+
+        self.draw_whales(10, whale_height, width)
+        self.draw_trades(trades_y, trades_height, width)
         self.draw_footer(height, width)
         self.stdscr.refresh()
 
-    def update(self, orders=None, trades=None, status=None,
-               latency_us=None, **kwargs):
+    def update(
+        self,
+        orders=None,
+        trades=None,
+        status=None,
+        latency_us=None,
+        best_bid=None,
+        best_ask=None,
+        **kwargs,
+    ):
         # Update supplied values; counters are absolute totals
         if orders is not None:
             self.orders = max(0, orders)
@@ -217,16 +305,32 @@ class CursesDashboard:
             self.status = status
         if latency_us is not None:
             self.latency_us = latency_us
+        if best_bid is not None or "best_bid" in kwargs:
+            self.best_bid = best_bid if best_bid is not None else kwargs.get("best_bid")
+        if best_ask is not None or "best_ask" in kwargs:
+            self.best_ask = best_ask if best_ask is not None else kwargs.get("best_ask")
 
     def add_whale(self, whale):
         self.whales += 1
-        prices = f"{min(whale.execution_prices)}-{max(whale.execution_prices)}"
         side = "BUY" if getattr(whale.side, "name", str(whale.side)) == "BUY" else "SELL"
-        record = (
-            f"{datetime.now().strftime('%H:%M:%S'):<10.10} {'*WHALE*':<10.10} "
-            f"{side:<6.6} {prices:>10.10} {str(whale.total_quantity):>8.8}"
-        )
-        self.recent_trades.append(record)
+        prices = f"[{', '.join(str(p) for p in whale.execution_prices)}]"
+        ts_str = datetime.now().strftime("%H:%M:%S")
+        if hasattr(whale, "timestamp_ns") and whale.timestamp_ns:
+            try:
+                ts_str = datetime.fromtimestamp(whale.timestamp_ns / 1_000_000_000).strftime("%H:%M:%S")
+            except Exception:
+                pass
+
+        whale_record = {
+            "time": ts_str,
+            "order_id": whale.order_id,
+            "side": side,
+            "quantity": whale.total_quantity,
+            "levels_swept": whale.levels_swept,
+            "prices": prices,
+            "is_partial": getattr(whale, "is_partial", False),
+        }
+        self.recent_whales.appendleft(whale_record)
 
     def add_trade(self, trade):
         # Accept a dictionary or a plain text trade record
@@ -246,7 +350,7 @@ class CursesDashboard:
         else:
             record = str(trade)
 
-        self.recent_trades.append(record)
+        self.recent_trades.appendleft(record)
 
     def get_key(self):
         # Read a key without blocking the dashboard
