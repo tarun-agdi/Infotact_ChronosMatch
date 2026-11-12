@@ -52,21 +52,98 @@ Algorithm 6: stop()
 4. Wait for the background task to finish.
 5. Mark the writer as stopped.'''
 
+
+import asyncio
+
+
 class TradeWriter:
 
-    def __init__(self, trade_store):
+    def __init__(self, trade_store, batch_size=100):
+        if batch_size <= 0:
+            raise ValueError("Batch size must be greater than zero")
+
         self.trade_store = trade_store
-        self.trades = []
+        self.batch_size = batch_size
 
-    def add_trade(self, trade):
-        self.trades.append(trade)
+        self.queue = asyncio.Queue()
+        self._task = None
 
-    def write_trades(self):
-        if not self.trades:
+        self._running = False
+        self._accepting = False
+
+    # Add a trade to the asynchronous queue
+    def enqueue(self, trade):
+        if not self._accepting:
+            raise RuntimeError("TradeWriter is not accepting trades")
+
+        self.queue.put_nowait(trade)
+
+    # Start the background worker
+    def start(self):
+        if self._running:
             return
 
-        self.trade_store.save_trade(self.trades)
-        self.trades.clear()
+        self._running = True
+        self._accepting = True
 
-    def flush(self):
-        self.write_trades()
+        self._task = asyncio.create_task(self._run())
+
+    # Background worker
+    async def _run(self):
+        batch = []
+
+        while True:
+            trade = await self.queue.get()
+
+            # Shutdown signal received
+            if trade is None:
+                try:
+                    await self._flush(batch)
+                finally:
+                    self.queue.task_done()
+                break
+
+            batch.append(trade)
+
+            # Flush when batch reaches its limit
+            if len(batch) >= self.batch_size:
+                await self._flush(batch)
+
+        self._running = False
+
+    # Write the batch to the database
+    async def _flush(self, batch):
+        if not batch:
+            return
+
+        batch_size = len(batch)
+
+        # Run database operation outside the event loop
+        await asyncio.to_thread(
+            self.trade_store.save_trades,
+            batch.copy()
+        )
+
+        # Clear batch only after successful insertion
+        batch.clear()
+
+        # Mark processed queue items as completed
+        for _ in range(batch_size):
+            self.queue.task_done()
+
+    # Stop the worker gracefully
+    async def stop(self):
+        if not self._running:
+            return
+
+        # Prevent new trades from being accepted
+        self._accepting = False
+
+        # Add shutdown signal after all pending trades
+        self.queue.put_nowait(None)
+
+        # Wait for worker to flush and exit
+        await self._task
+
+        self._task = None
+        self._running = False

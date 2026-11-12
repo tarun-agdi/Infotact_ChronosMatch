@@ -40,61 +40,99 @@ Algorithm 5: close()
 1. Check whether the database connection is open.
 2. Close the database connection.
 3. Release the database resources."""
+
 import sqlite3
+from pathlib import Path
 
 
+class TradeStore:
 
-class Tradestore():
+    def __init__(self, db_path="data/trades.db") -> None:
 
-   def __init__(self, db_path) -> None:
-      connection = sqlite3.connect(db_path)
-      self.connection = connection
-      cursor = sqlite3.Cursor(connection)
-      self.cursor = cursor
-      self.create_table()
+        # Ensure the database directory exists
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-   def create_table(self):
-      query = """CREATE TABLE if not exists trades(
-                  trade_id integer primary key,
-                  buy_order_id INTEGER,
-                  sell_order_id INTEGER,
-                  price REAL,
-                  quantity INTEGER,
-                  timestamp TEXT);"""
-      self.cursor.execute(query)
-      self.connection.commit()
+        # Establish database connection
+        self.connection = sqlite3.connect(db_path)
+        self.cursor = self.connection.cursor()
 
-   def save_trade(self,trades):
-      if not trades:
-         return 
+        # Create trades table
+        self._create_table()
 
-      value = []
-      for trade in trades:
-         exe_trade = (
-                  trade.buy_order_id,
-                  trade.sell_order_id,
-                  trade.price,
-                  trade.quantity,
-                  trade.timestamp)
-      value.append(exe_trade)
-      query = """INSERT INTO trades
-               (buy_order_id, sell_order_id, price, quantity, timestamp)
-               VALUES (?, ?, ?, ?, ?)"""
-      self.cursor.executemany(query, value)
+    def _create_table(self):
 
-      self.connection.commit()
+        query = """
+        CREATE TABLE IF NOT EXISTS trades (
+            trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            buy_order_id INTEGER NOT NULL,
+            sell_order_id INTEGER NOT NULL,
+            price INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            timestamp_ns INTEGER NOT NULL
+        );
+        """
 
-   def get_trades(self, limit=100):
-    query = """SELECT * FROM trades
-               ORDER BY trade_id DESC
-               LIMIT ?"""
+        self.cursor.execute(query)
+        self.connection.commit()
 
-    self.cursor.execute(query, (limit,))
-    trades = self.cursor.fetchall()
+    def save_trades(self, trades):
 
-    return trades
+        # Check whether the list is empty
+        if not trades:
+            return
 
-   def close(self):
-    if self.connection:
-        self.cursor.close()
-        self.connection.close()
+        values = []
+
+        # Extract trade information
+        for trade in trades:
+
+            exe_trade = (
+                trade.buy_order_id,
+                trade.sell_order_id,
+                trade.price,
+                trade.quantity,
+                trade.timestamp_ns
+            )
+
+            values.append(exe_trade)
+
+        query = """
+        INSERT INTO trades (
+            buy_order_id,
+            sell_order_id,
+            price,
+            quantity,
+            timestamp_ns
+        )
+        VALUES (?, ?, ?, ?, ?);
+        """
+
+        try:
+            self.cursor.executemany(query, values)
+            self.connection.commit()
+
+        except sqlite3.Error:
+            self.connection.rollback()
+            raise
+
+    def get_trades(self, limit=100):
+
+        if limit <= 0:
+            raise ValueError("Limit must be greater than zero")
+
+        query = """
+        SELECT * FROM trades
+        ORDER BY trade_id DESC
+        LIMIT ?;
+        """
+
+        self.cursor.execute(query, (limit,))
+
+        return self.cursor.fetchall()
+
+    def close(self):
+
+        if self.connection:
+            self.cursor.close()
+            self.connection.close()
+            self.connection = None
